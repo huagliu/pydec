@@ -10,10 +10,8 @@ simplicial meshes
 """
 from pydec import simplicial_complex, d, delta, whitney_innerproduct, \
      simplex_quivers
-from numpy import loadtxt
 from scipy import real, zeros
-from scipy.linalg import inv
-from scipy.linalg import eig
+from scipy.linalg import inv, eig, lu_factor, lu_solve
 from matplotlib.pylab import quiver, figure, triplot, show
 import numpy as np
 import scipy as sp
@@ -45,37 +43,43 @@ d_0 = sc[0].d
 d_1 = sc[1].d
 d_b = .5 * np.abs(d_0.T) @ np.diag(d_1.T @ np.ones(d_1.shape[0]))
 dual_ext = (-d_0.T) @ star1
+ext_primal = inv_star0 @ (-d_0.T)
 d_b_primal = inv_star0 @ d_b 
 
 # Page 13, middle of page.
-U_op = star1 @ d_0 
-V_op = inv_star1 @ U_op
-
 def UV(psi):
-    return U_op @ psi, V_op @ psi
+    V = d_0 @ psi
+    U = star1 @ V
+    return U, V
 
 # Middle of page 12
-def W(V): return .5 * np.diag(V) @ np.abs(d_0)
+def W(V): 
+    # this is equivalent to np.diag(V) @ np.abs(d_0); but much faster.
+    print(V.shape)
+    print(d_0.shape)
+    return .5 * np.diag(V) @ np.abs(d_0)
 
-def F(U, V):
+def F(U, V, W_V):
     '''Unlabeled, but implements F from the paper, right under 17'''
     pre_mult = d_b_primal @ V
-    return 1/dt * (-d_0.T) @ U + dual_ext @ (mu*d_0 @ pre_mult- W(V) @ pre_mult)
+    return 1/dt * (-d_0.T) @ U + dual_ext @ (mu*d_0 @ pre_mult - W_V @ pre_mult)
 
-A = (1./(dt)) * (-d_0.T) @ U_op
+A = dual_ext @ d_0
+A_lu, A_piv, = lu_factor(A)
 def first_half_step(psi):
     '''Implements (18)'''
     print("Start first half step")
     # Want to solve equation Ax =b.
     U, V = UV(psi)
+    W_V = W(V)
 
-    pre_mult = inv_star0 @ (-d_0.T) @ U
-    b = F(U, V) + dual_ext @ (-mu*d_0 @ pre_mult + W(V) @ pre_mult)
+    pre_mult = ext_primal @ U
+    b = F(U, V, W_V) + dual_ext @ (-mu * d_0 @ pre_mult + W_V @ pre_mult)
 
     print("Solving first half step")
-    return np.linalg.solve(A, b)
+    return lu_solve((A_lu, A_piv), dt*b)
 
-def second_half_step(psi):
+'''def second_half_step(psi):
     '''Implements (19)'''
     print("Start second half step")
     U, V = UV(psi)
@@ -84,7 +88,7 @@ def second_half_step(psi):
 
     print("Solving second half step")
     return np.linalg.solve(A, F(U, V))
-
+'''
 def time_step(psi):
     psi_n1 = first_half_step(psi)
 #    print("Finished first half step")
